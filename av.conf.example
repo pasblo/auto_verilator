@@ -11,8 +11,8 @@ VERILATOR_CONF_VLT = ./verilator_conf.vlt
 # GTKWAVE_VIEWS_DIR = ../sim/gtk_views
 
 [verilator]
+# Comma-separated without spaces
 HDL_EXTENSIONS = sv
-# HDL_EXTENSION = sv            # optional single-extension fallback
 EXCLUDE_FOLDERS = tests
 FOLDER_ORDER = constants, interfaces, interstage, components
 SIMULATION_MAX_CYCLES = 9999999

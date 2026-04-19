@@ -177,10 +177,6 @@ def parse_conf_file(conf_path: Path) -> ConfData:
 
 def _parse_extensions(conf: ConfData) -> list[str]:
     raw = conf.get("HDL_EXTENSIONS")
-    if raw is None:
-        single = conf.get("HDL_EXTENSION")
-        if single:
-            raw = single
 
     if raw is None:
         return list(DEFAULT_HDL_EXTENSIONS)

@@ -27,7 +27,7 @@ Expected structure in the host project:
 ## Install As Submodule
 
 ```bash
-git submodule add <YOUR_AUTO_VERILATOR_REPO_URL> scripts/auto_verilator
+git submodule add https://github.com/pasblo/auto_verilator scripts/auto_verilator
 git submodule update --init --recursive
 ```
 
@@ -84,7 +84,6 @@ Key reference:
 | `[paths]` | `GTKWAVE_VIEWS_DIR` | Optional explicit override for `.gtkw` views folder. |
 | `[paths]` | `VERILATOR_CONF_VLT` | Path to the Verilator `.vlt` config/waiver file. |
 | `[verilator]` | `HDL_EXTENSIONS` | Comma-separated HDL extensions to include (example: `sv,v`). |
-| `[verilator]` | `HDL_EXTENSION` | Single-extension fallback if `HDL_EXTENSIONS` is not set. |
 | `[verilator]` | `EXCLUDE_FOLDERS` | Comma-separated folder names to skip while scanning `RTL_DIR`. |
 | `[verilator]` | `FOLDER_ORDER` | Source ordering priority by folder name for `verilator.f`. |
 | `[verilator]` | `SIMULATION_MAX_CYCLES` | Max simulation loop cycles in generated C++ harness. |
