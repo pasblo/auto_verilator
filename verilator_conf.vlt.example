@@ -1,0 +1,5 @@
+`verilator_config
+
+// Example waivers:
+// lint_off -rule UNUSED -file "*_tb.sv"
+// lint_off -rule DECLFILENAME -file "*"

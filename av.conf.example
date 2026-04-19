@@ -1,0 +1,24 @@
+# Example auto_verilator config
+# Place a copy of this file at: <project>/scripts/av.conf
+
+[paths]
+# Paths are resolved relative to <project>/scripts
+RTL_DIR = ../rtl
+SIM_ROOT = ../sim
+VERILATOR_CONF_VLT = ./verilator_conf.vlt
+# Optional overrides:
+# SIM_DIR = ../sim/verilator
+# GTKWAVE_VIEWS_DIR = ../sim/gtk_views
+
+[verilator]
+HDL_EXTENSIONS = sv
+# HDL_EXTENSION = sv            # optional single-extension fallback
+EXCLUDE_FOLDERS = tests
+FOLDER_ORDER = constants, interfaces, interstage, components
+SIMULATION_MAX_CYCLES = 9999999
+# Semicolon-separated to preserve spaces inside flags
+FILELIST_FLAGS = -Wall; -Wno-fatal; -j 0; --assert; --no-trace-top; --trace-structs; --timing; --x-initial unique
+
+[tools]
+VERILATOR_BIN = verilator
+GTKWAVE_BIN = gtkwave
