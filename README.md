@@ -65,6 +65,7 @@ VERILATOR_CONF_VLT = ./verilator_conf.vlt
 [verilator]
 HDL_EXTENSIONS = sv
 EXCLUDE_FOLDERS = tests
+EXCLUDE_TESTBENCHES = true
 FOLDER_ORDER = constants, interfaces, interstage, components
 SIMULATION_MAX_CYCLES = 9999999
 FILELIST_FLAGS = -Wall; -Wno-fatal; -j 0; --assert; --no-trace-top; --trace-structs; --timing; --x-initial unique
@@ -85,6 +86,7 @@ Key reference:
 | `[paths]` | `VERILATOR_CONF_VLT` | Path to the Verilator `.vlt` config/waiver file. |
 | `[verilator]` | `HDL_EXTENSIONS` | Comma-separated HDL extensions to include (example: `sv,v`). |
 | `[verilator]` | `EXCLUDE_FOLDERS` | Comma-separated folder names to skip while scanning `RTL_DIR`. |
+| `[verilator]` | `EXCLUDE_TESTBENCHES` | Boolean true or false indicating if testbench files "_tb" are expluded in `verilator.f`. |
 | `[verilator]` | `FOLDER_ORDER` | Source ordering priority by folder name for `verilator.f`. |
 | `[verilator]` | `SIMULATION_MAX_CYCLES` | Max simulation loop cycles in generated C++ harness. |
 | `[verilator]` | `FILELIST_FLAGS` | Extra flags written to `verilator.f`. Use `;` separator for flags containing spaces. |
@@ -273,7 +275,7 @@ SV file exclusion:
 
 ## Installing Verilator and GTKWave (Windows)
 
-WSL:
+In WSL: `wsl.exe -d Ubuntu`
 
 ```bash
 sudo apt-get update

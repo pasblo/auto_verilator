@@ -14,6 +14,7 @@ VERILATOR_CONF_VLT = ./verilator_conf.vlt
 # Comma-separated without spaces
 HDL_EXTENSIONS = sv
 EXCLUDE_FOLDERS = tests
+EXCLUDE_TESTBENCHES = true
 FOLDER_ORDER = constants, interfaces, interstage, components
 SIMULATION_MAX_CYCLES = 9999999
 # Semicolon-separated to preserve spaces inside flags

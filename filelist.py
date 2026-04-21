@@ -57,6 +57,9 @@ def discover_hdl_files(runtime: RuntimeConfig, tb_path: Path | None = None) -> l
             if path_contains_any(str(path), list(runtime.exclude_folders)):
                 continue
 
+            if str(path).endswith("_tb.sv") and runtime.exclude_testbenches == "true":
+                continue
+
             if _has_skip_flag(path):
                 continue
 

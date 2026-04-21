@@ -8,6 +8,7 @@ from typing import Dict
 
 DEFAULT_HDL_EXTENSIONS = ("sv",)
 DEFAULT_EXCLUDE_FOLDERS = ("tests",)
+DEFAULT_EXCLUDE_TESTBENCHES = "true"
 DEFAULT_FOLDER_ORDER = ("constants", "interfaces", "interstage", "components")
 DEFAULT_SIM_MAX_CYCLES = 9_999_999
 DEFAULT_FILELIST_FLAGS = (
@@ -64,6 +65,7 @@ class RuntimeConfig:
     gtkwave_bin: str
     hdl_extensions: tuple[str, ...]
     exclude_folders: tuple[str, ...]
+    exclude_testbenches: str
     folder_order: tuple[str, ...]
     simulation_max_cycles: int
     filelist_flags: tuple[str, ...]
@@ -88,6 +90,7 @@ def resolve_runtime_config(tool_dir: Path, conf_name: str | None = None) -> Runt
 
     hdl_extensions = _parse_extensions(conf)
     exclude_folders = _parse_csv(conf.get("EXCLUDE_FOLDERS"), DEFAULT_EXCLUDE_FOLDERS)
+    exclude_testbenches = _parse_str(conf.get("EXCLUDE_TESTBENCHES"), DEFAULT_EXCLUDE_TESTBENCHES)
     folder_order = _parse_csv(conf.get("FOLDER_ORDER"), DEFAULT_FOLDER_ORDER)
     simulation_max_cycles = _parse_int(conf.get("SIMULATION_MAX_CYCLES"), DEFAULT_SIM_MAX_CYCLES)
     filelist_flags = _parse_flags(conf.get("FILELIST_FLAGS"), DEFAULT_FILELIST_FLAGS)
@@ -111,6 +114,7 @@ def resolve_runtime_config(tool_dir: Path, conf_name: str | None = None) -> Runt
         gtkwave_bin=gtkwave_bin,
         hdl_extensions=tuple(hdl_extensions),
         exclude_folders=tuple(exclude_folders),
+        exclude_testbenches=exclude_testbenches,
         folder_order=tuple(folder_order),
         simulation_max_cycles=simulation_max_cycles,
         filelist_flags=tuple(filelist_flags),
@@ -190,6 +194,12 @@ def _parse_csv(raw_value: str | None, default_values: tuple[str, ...]) -> list[s
         return list(default_values)
     values = [part.strip() for part in raw_value.split(",") if part.strip()]
     return values or list(default_values)
+
+
+def _parse_str(raw_value: str | None, default_values: tuple[str, ...]) -> str:
+    if raw_value is None:
+        return default_values
+    return raw_value
 
 
 def _parse_flags(raw_value: str | None, default_values: tuple[str, ...]) -> list[str]:
