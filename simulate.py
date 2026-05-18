@@ -18,6 +18,7 @@ def run_verilator_sim(
     conf_name: str | None = None,
     no_regenerate: bool = False,
     skip_verilate: bool = False,
+    fast: bool = False,
     launch_gtkwave: bool = False,
     wave_file: str = "wave.fst",
     gtkwave_restore: bool = False,
@@ -68,7 +69,7 @@ def run_verilator_sim(
     runtime.views_dir.mkdir(parents=True, exist_ok=True)
 
     cpp_path = runtime.sim_dir / "sim_main.cpp"
-    _generate_main_cpp(tb_mod_name, cpp_path, wave_file, runtime.simulation_max_cycles)
+    _generate_main_cpp(tb_mod_name, cpp_path, wave_file, runtime.simulation_max_cycles, fast)
 
     obj_dir = runtime.sim_dir / "obj_dir"
     if not skip_verilate:
@@ -92,7 +93,11 @@ def run_verilator_sim(
             str(filelist_path),
             "--top-module",
             tb_mod_name,
-            "--trace-fst",
+            # FST trace instrumentation of the whole design hierarchy is the
+            # single biggest generated-C++/build-time multiplier. In --fast
+            # mode it is dropped: self-checking TBs report PASS/FAIL without a
+            # waveform, which is only needed when a check fails.
+            *(() if fast else ("--trace-fst",)),
             "--exe",
             cpp_path.name,
             "--build",
@@ -119,10 +124,13 @@ def run_verilator_sim(
         print(f"Simulation failed with exit code {run_result.returncode}", file=sys.stderr)
         return run_result.returncode
 
-    wave_path = Path(wave_file)
-    if not wave_path.is_absolute():
-        wave_path = (runtime.sim_dir / wave_path).resolve()
-    print(f"Simulation completed, waveform: {wave_path}")
+    if fast:
+        print("Simulation completed (--fast: no waveform generated).")
+    else:
+        wave_path = Path(wave_file)
+        if not wave_path.is_absolute():
+            wave_path = (runtime.sim_dir / wave_path).resolve()
+        print(f"Simulation completed, waveform: {wave_path}")
 
     if probe:
         if probe_view is None:
@@ -186,6 +194,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip Verilator build and run an existing executable.",
     )
     parser.add_argument(
+        "--fast",
+        action="store_true",
+        help="No-waveform build: drop --trace-fst and FST harness for a much "
+        "faster Verilator build. TBs stay self-checking; incompatible with "
+        "GTKWave/probe (no wave produced).",
+    )
+    parser.add_argument(
         "--gtkwave-new",
         action="store_true",
         help="Launch GTKWave without restoring a .gtkw layout file.",
@@ -228,6 +243,21 @@ def main(argv: list[str] | None = None) -> int:
     except (FileNotFoundError, ValueError) as exc:
         print(exc, file=sys.stderr)
         return 1
+
+    # --fast produces no waveform, so any GTKWave/probe request is moot.
+    if args.fast and (
+        args.gtkwave_new or args.gtkwave_view or args.gtkwave_last
+        or args.probe or args.probe_add
+    ):
+        print(
+            "Note: --fast generates no waveform; GTKWave/probe options ignored.",
+            file=sys.stderr,
+        )
+        args.gtkwave_new = False
+        args.gtkwave_view = None
+        args.gtkwave_last = False
+        args.probe = False
+        args.probe_add = False
 
     launch_gtkwave = False
     gtkwave_restore = False
@@ -273,6 +303,7 @@ def main(argv: list[str] | None = None) -> int:
         conf_name=args.conf,
         no_regenerate=args.no_regenerate,
         skip_verilate=args.skip_verilate,
+        fast=args.fast,
         launch_gtkwave=launch_gtkwave,
         wave_file=args.wavefile,
         gtkwave_restore=gtkwave_restore,
@@ -283,9 +314,44 @@ def main(argv: list[str] | None = None) -> int:
     )
 
 
-def _generate_main_cpp(tb_mod_name: str, output_path: Path, wave_file: str, max_cycles: int) -> None:
+def _generate_main_cpp(
+    tb_mod_name: str,
+    output_path: Path,
+    wave_file: str,
+    max_cycles: int,
+    fast: bool = False,
+) -> None:
     tb_class = "V" + tb_mod_name
-    code = f"""// Verilator simulation harness (auto-generated)
+    if fast:
+        # No-waveform harness: pairs with dropping --trace-fst so no FST
+        # instrumentation is generated/compiled. The TB is still fully
+        # self-checking ($finish + PASS/FAIL).
+        code = f"""// Verilator simulation harness (auto-generated, --fast: no trace)
+#include "verilated.h"
+#include "{tb_class}.h"
+
+vluint64_t main_time = 0;
+double sc_time_stamp() {{
+    return main_time;
+}}
+
+int main(int argc, char** argv) {{
+    Verilated::commandArgs(argc, argv);
+    {tb_class}* top = new {tb_class};
+
+    const vluint64_t max_time = {max_cycles};
+    while (!Verilated::gotFinish() && main_time < max_time) {{
+        top->eval();
+        main_time++;
+    }}
+
+    top->final();
+    delete top;
+    return 0;
+}}
+"""
+    else:
+        code = f"""// Verilator simulation harness (auto-generated)
 #include "verilated.h"
 #include "{tb_class}.h"
 #include "verilated_fst_c.h"

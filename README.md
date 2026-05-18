@@ -193,6 +193,7 @@ Arguments:
 | `testbench` | Yes | Path to testbench file. The testbench filename stem is used as Verilator `--top-module`. |
 | `gtkwave_view` | No | `.gtkw` view name/path to restore when GTKWave restore mode is active. |
 | `--conf` | No | Config file path/name. |
+| `--fast` | No | Skips trace code, do not use with gtk wave generation. |
 | `--no-regenerate` | No | Reuse existing `verilator.f`. |
 | `--skip-verilate` | No | Skip build; run existing executable from `sim/verilator/verilated/`. |
 | `--wavefile` | No | Waveform output name/path. Relative paths are resolved under `sim/verilator`. |
