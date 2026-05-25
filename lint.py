@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 
+from file_utils import resolve_user_path
 from filelist import generate_dynamic_file_list
 from project_context import resolve_runtime_config
 
@@ -21,7 +22,7 @@ def run_verilator_lint(
         print(exc, file=sys.stderr)
         return 1
 
-    tb_path = _resolve_user_path(testbench)
+    tb_path = resolve_user_path(testbench)
     if not tb_path.exists():
         print(f"Testbench file not found: {tb_path}", file=sys.stderr)
         return 1
@@ -67,7 +68,7 @@ def run_verilator_lint(
         print(result.stderr, end="", file=sys.stderr)
 
     if latex_output is not None:
-        latex_path = _resolve_user_path(latex_output)
+        latex_path = resolve_user_path(latex_output)
         _write_latex_output(latex_path, result.stdout, result.stderr)
         print(f"LaTeX output saved to {latex_path}")
 
@@ -87,7 +88,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--conf",
         default=None,
-        help="Configuration file name/path. If omitted, scripts/av.conf is used by default.",
+        help="Path to the .conf file. If omitted, scripts/av.conf is used.",
     )
     parser.add_argument(
         "--no-regenerate",
@@ -113,13 +114,6 @@ def main(argv: list[str] | None = None) -> int:
         no_regenerate=args.no_regenerate,
         latex_output=args.latex,
     )
-
-
-def _resolve_user_path(path_value: str) -> Path:
-    path = Path(path_value).expanduser()
-    if not path.is_absolute():
-        path = (Path.cwd() / path).resolve()
-    return path
 
 
 def _write_latex_output(latex_path: Path, stdout_text: str, stderr_text: str) -> None:

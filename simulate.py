@@ -7,25 +7,19 @@ import shutil
 import subprocess
 import sys
 
+from file_utils import resolve_user_path
 from filelist import generate_dynamic_file_list
 from gtkwave_probe import update_gtkwave_view_from_sv
 from project_context import resolve_runtime_config
-
-
-# Supported trace formats. ``none`` keeps the historical ``--fast`` behaviour
-# (no waveform, fastest build). ``fst`` keeps the historical default for any
-# caller that wants a GTKWave-ready trace. ``vcd`` produces a 4-state VCD
-# that downstream tools such as OpenSTA's ``read_vcd`` can consume.
-TRACE_FORMAT_NONE = "none"
-TRACE_FORMAT_FST  = "fst"
-TRACE_FORMAT_VCD  = "vcd"
-TRACE_FORMATS     = (TRACE_FORMAT_NONE, TRACE_FORMAT_FST, TRACE_FORMAT_VCD)
-
-
-def _default_wave_file(trace_format: str) -> str:
-    if trace_format == TRACE_FORMAT_VCD:
-        return "wave.vcd"
-    return "wave.fst"
+from sim_harness import (
+    TRACE_FORMAT_FST,
+    TRACE_FORMAT_NONE,
+    TRACE_FORMAT_VCD,
+    TRACE_FORMATS,
+    default_wave_file,
+    generate_main_cpp,
+    trace_flag,
+)
 
 
 def run_verilator_sim(
@@ -34,7 +28,6 @@ def run_verilator_sim(
     conf_name: str | None = None,
     no_regenerate: bool = False,
     skip_verilate: bool = False,
-    fast: bool = False,
     trace_format: str = TRACE_FORMAT_FST,
     launch_gtkwave: bool = False,
     wave_file: str | None = None,
@@ -44,27 +37,22 @@ def run_verilator_sim(
     probe_view: str | None = None,
     probe_fresh: bool = False,
 ) -> int:
-    # ``--fast`` is a historical alias for ``--trace-format none``. Honour it
-    # for backward compat: callers that pre-date the trace-format knob still
-    # work unchanged.
-    if fast:
-        trace_format = TRACE_FORMAT_NONE
     if trace_format not in TRACE_FORMATS:
         print(
-            f"Invalid trace format: {trace_format!r}; "
-            f"expected one of {TRACE_FORMATS}.",
+            f"Invalid trace format: {trace_format!r}; expected one of {TRACE_FORMATS}.",
             file=sys.stderr,
         )
         return 1
     if wave_file is None:
-        wave_file = _default_wave_file(trace_format)
+        wave_file = default_wave_file(trace_format)
+
     try:
         runtime = resolve_runtime_config(Path(__file__).resolve().parent, conf_name)
     except (FileNotFoundError, ValueError) as exc:
         print(exc, file=sys.stderr)
         return 1
 
-    tb_path = _resolve_user_path(testbench)
+    tb_path = resolve_user_path(testbench)
     if not tb_path.exists():
         print(f"Testbench file not found: {tb_path}", file=sys.stderr)
         return 1
@@ -100,7 +88,7 @@ def run_verilator_sim(
     runtime.views_dir.mkdir(parents=True, exist_ok=True)
 
     cpp_path = runtime.sim_dir / "sim_main.cpp"
-    _generate_main_cpp(
+    generate_main_cpp(
         tb_mod_name, cpp_path, wave_file, runtime.simulation_max_cycles,
         trace_format=trace_format,
     )
@@ -118,17 +106,6 @@ def run_verilator_sim(
     exe_path = (verilated_dir / exe_name).resolve()
 
     if not skip_verilate:
-        # Trace instrumentation of the whole design hierarchy is the single
-        # biggest generated-C++/build-time multiplier. ``none`` drops it
-        # entirely (self-checking TBs still report PASS/FAIL); ``fst`` keeps
-        # the historical GTKWave-friendly format; ``vcd`` emits a 4-state VCD
-        # consumable by OpenSTA / power-overlay flows.
-        if trace_format == TRACE_FORMAT_NONE:
-            trace_flag: tuple[str, ...] = ()
-        elif trace_format == TRACE_FORMAT_VCD:
-            trace_flag = ("--trace",)
-        else:  # TRACE_FORMAT_FST
-            trace_flag = ("--trace-fst",)
         cmd = [
             runtime.verilator_bin,
             "-sv",
@@ -138,7 +115,7 @@ def run_verilator_sim(
             str(filelist_path),
             "--top-module",
             tb_mod_name,
-            *trace_flag,
+            *trace_flag(trace_format),
             "--exe",
             cpp_path.name,
             "--build",
@@ -166,14 +143,12 @@ def run_verilator_sim(
         return run_result.returncode
 
     if trace_format == TRACE_FORMAT_NONE:
-        print("Simulation completed (--trace-format none: no waveform generated).")
+        print("Simulation completed (no waveform; trace-format=none).")
     else:
         wave_path = Path(wave_file)
         if not wave_path.is_absolute():
             wave_path = (runtime.sim_dir / wave_path).resolve()
-        print(
-            f"Simulation completed, waveform ({trace_format.upper()}): {wave_path}"
-        )
+        print(f"Simulation completed, waveform ({trace_format.upper()}): {wave_path}")
 
     if probe:
         if probe_view is None:
@@ -224,7 +199,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--conf",
         default=None,
-        help="Configuration file name/path. If omitted, scripts/av.conf is used by default.",
+        help="Path to the .conf file. If omitted, scripts/av.conf is used.",
     )
     parser.add_argument(
         "--no-regenerate",
@@ -237,23 +212,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip Verilator build and run an existing executable.",
     )
     parser.add_argument(
-        "--fast",
-        action="store_true",
-        help="No-waveform build: drop --trace-fst and FST harness for a much "
-        "faster Verilator build. TBs stay self-checking; incompatible with "
-        "GTKWave/probe (no wave produced). Alias for --trace-format none.",
-    )
-    parser.add_argument(
         "--trace-format",
         choices=TRACE_FORMATS,
         default=TRACE_FORMAT_FST,
         help=(
-            "Waveform format. 'fst' (default) is the GTKWave-friendly format; "
-            "'vcd' emits a 4-state VCD consumable by OpenSTA/power-overlay "
-            "flows but is larger on disk; 'none' drops trace instrumentation "
-            "entirely for a fast self-checking-TB build. --fast is a legacy "
-            "alias for 'none'; --vcd is a shortcut for 'vcd'."
+            "Waveform format. 'fst' (default) is GTKWave-friendly; "
+            "'vcd' is consumable by tools like OpenSTA but larger on disk; "
+            "'none' drops trace instrumentation for a faster build."
         ),
+    )
+    parser.add_argument(
+        "--fast",
+        action="store_true",
+        help="Shortcut for --trace-format none. Not compatible with --probe or GTKWave options.",
     )
     parser.add_argument(
         "--vcd",
@@ -292,8 +263,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Waveform file path (absolute or relative to sim/verilator). "
-            "Defaults to wave.fst for --trace-format fst and wave.vcd for "
-            "--trace-format vcd; ignored when --trace-format none."
+            "Defaults to wave.fst for fst and wave.vcd for vcd; ignored when --trace-format none."
         ),
     )
     return parser
@@ -308,18 +278,14 @@ def main(argv: list[str] | None = None) -> int:
         print(exc, file=sys.stderr)
         return 1
 
-    # Resolve the trace format: --fast and --vcd are shortcuts that override
-    # the (defaulting) --trace-format value. ``--fast`` wins over ``--vcd``
-    # if both are passed; that ordering matches the historical "no waveform"
-    # semantic that --fast carried.
     trace_format = args.trace_format
     if args.vcd:
         trace_format = TRACE_FORMAT_VCD
     if args.fast:
         trace_format = TRACE_FORMAT_NONE
-    wave_file = args.wavefile if args.wavefile else _default_wave_file(trace_format)
+    wave_file = args.wavefile if args.wavefile else default_wave_file(trace_format)
 
-    # No-waveform mode produces no waveform, so any GTKWave/probe request is moot.
+    # No waveform => GTKWave / probe options are no-ops.
     if trace_format == TRACE_FORMAT_NONE and (
         args.gtkwave_new or args.gtkwave_view or args.gtkwave_last
         or args.probe or args.probe_add
@@ -379,7 +345,6 @@ def main(argv: list[str] | None = None) -> int:
         conf_name=args.conf,
         no_regenerate=args.no_regenerate,
         skip_verilate=args.skip_verilate,
-        fast=False,
         trace_format=trace_format,
         launch_gtkwave=launch_gtkwave,
         wave_file=wave_file,
@@ -389,116 +354,6 @@ def main(argv: list[str] | None = None) -> int:
         probe_view=probe_view,
         probe_fresh=probe_fresh,
     )
-
-
-def _generate_main_cpp(
-    tb_mod_name: str,
-    output_path: Path,
-    wave_file: str,
-    max_cycles: int,
-    trace_format: str = TRACE_FORMAT_FST,
-) -> None:
-    tb_class = "V" + tb_mod_name
-    if trace_format == TRACE_FORMAT_NONE:
-        # No-waveform harness: pairs with dropping --trace-fst/--trace so no
-        # trace instrumentation is generated/compiled. The TB is still fully
-        # self-checking ($finish + PASS/FAIL).
-        code = f"""// Verilator simulation harness (auto-generated, --trace-format none: no trace)
-#include "verilated.h"
-#include "{tb_class}.h"
-
-vluint64_t main_time = 0;
-double sc_time_stamp() {{
-    return main_time;
-}}
-
-int main(int argc, char** argv) {{
-    Verilated::commandArgs(argc, argv);
-    {tb_class}* top = new {tb_class};
-
-    const vluint64_t max_time = {max_cycles};
-    while (!Verilated::gotFinish() && main_time < max_time) {{
-        top->eval();
-        main_time++;
-    }}
-
-    top->final();
-    delete top;
-    return 0;
-}}
-"""
-    elif trace_format == TRACE_FORMAT_VCD:
-        # VCD harness: pairs with --trace (4-state VCD) for downstream
-        # consumers that cannot read FST (e.g. OpenSTA's read_vcd).
-        code = f"""// Verilator simulation harness (auto-generated, --trace-format vcd)
-#include "verilated.h"
-#include "{tb_class}.h"
-#include "verilated_vcd_c.h"
-
-vluint64_t main_time = 0;
-double sc_time_stamp() {{
-    return main_time;
-}}
-
-int main(int argc, char** argv) {{
-    Verilated::commandArgs(argc, argv);
-    {tb_class}* top = new {tb_class};
-
-    Verilated::traceEverOn(true);
-    VerilatedVcdC* tfp = new VerilatedVcdC;
-    top->trace(tfp, 99);
-    tfp->open("{wave_file}");
-
-    const vluint64_t max_time = {max_cycles};
-    while (!Verilated::gotFinish() && main_time < max_time) {{
-        top->eval();
-        tfp->dump(main_time);
-        main_time++;
-    }}
-
-    top->final();
-    tfp->close();
-    delete tfp;
-    delete top;
-    return 0;
-}}
-"""
-    else:  # TRACE_FORMAT_FST
-        code = f"""// Verilator simulation harness (auto-generated, --trace-format fst)
-#include "verilated.h"
-#include "{tb_class}.h"
-#include "verilated_fst_c.h"
-
-vluint64_t main_time = 0;
-double sc_time_stamp() {{
-    return main_time;
-}}
-
-int main(int argc, char** argv) {{
-    Verilated::commandArgs(argc, argv);
-    {tb_class}* top = new {tb_class};
-
-    Verilated::traceEverOn(true);
-    VerilatedFstC* tfp = new VerilatedFstC;
-    top->trace(tfp, 99);
-    tfp->open("{wave_file}");
-
-    const vluint64_t max_time = {max_cycles};
-    while (!Verilated::gotFinish() && main_time < max_time) {{
-        top->eval();
-        tfp->dump(main_time);
-        main_time++;
-    }}
-
-    top->final();
-    tfp->close();
-    delete tfp;
-    delete top;
-    return 0;
-}}
-"""
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(code, encoding="utf-8")
 
 
 def _resolve_probe_target(
@@ -592,13 +447,6 @@ def _launch_gtkwave(runtime, wave_file: str, gtkwave_restore: bool, gtkwave_view
         print("Opening GTKWave...")
     except FileNotFoundError:
         print("GTKWave not found in PATH. Open the waveform file manually.", file=sys.stderr)
-
-
-def _resolve_user_path(path_value: str) -> Path:
-    path = Path(path_value).expanduser()
-    if not path.is_absolute():
-        path = (Path.cwd() / path).resolve()
-    return path
 
 
 if __name__ == "__main__":
